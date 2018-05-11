@@ -23,7 +23,7 @@ hist(glucose, main = "Distribution of data" )
 ## Implement a Gibbs sampler
 
 
-Run at least 10,000 iterations. Compute and plot the autocorrelation of
+Running below at least 10,000 iterations. Then, I will compute and plot the autocorrelation of
 $\theta_0$ and $\theta_1$ as well as the effective sample sizes.
 ```{r, echo=FALSE, warning=FALSE, message=FALSE}
 #simulate zi
@@ -183,11 +183,11 @@ ggplot(df.1, aes(iter, parameter)) +
 
 ```
 
-Joint posterior is difficult to sample directly, easier to sample from the full conditional distribution of each parameter. We used a Gibbs Sampler generates a dependent sequence of parameter values whose distribution converges to the target joint posterior distribution
+Joint posterior is difficult to sample directly, easier to sample from the full conditional distribution of each parameter. I used a Gibbs Sampler to generate a dependent sequence of parameter values whose distribution converges to the target joint posterior distribution
 
 
 The first thetas were arbitrarily chosen initial values, then the thetas generated in the gibbs sampler depended on the initial thetas. For any initial values, the chain is converging to the posterior.
-Using 10,000 iterations, we used enough samples to approximate our posterior
+Using 10,000 iterations, I used enough samples to approximate our posterior
 
 The original glucose data does not follow a normal distribution (it has two modes, 100, 150), while the empirical distribution of $Y$ approximately follows normal distribution with 121 (approximately) as mean.
 Based on the iteration results, the average of $\theta_1$ is 104.10  while the average of $\theta_2$ is 148.7, which is coherent to the two modes location of the histogram of glucose data.
