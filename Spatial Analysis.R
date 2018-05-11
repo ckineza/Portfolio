@@ -189,9 +189,6 @@ lines(lowess(Baltimore.Health$LifeExp ~ Baltimore.Health$income), col="red")
 #If this isn't the case, your model may not be valid.
 #To check these assumptions, you should use a residuals
 #versus fitted values plot. Below is the plot from the regression analysis 
-#I did for the fantasy football article mentioned above. The errors have constant variance, 
-#with the residuals scattered randomly around zero. If, for example, the residuals increase or
-#decrease with the fitted values in a pattern, the errors may not have constant variance.
 
 
 plot(resid(dat) ~ fitted(dat),xlab = "Fitted Values",ylab = "Residuals")
@@ -210,7 +207,7 @@ abline(0,0)
 
 
 
-#Here are the characteristics of a well-behaved residual vs. 
+. 
 #fits plot and what they suggest about the appropriateness of the simple linear regression model:
 
 # The residuals "bounce randomly" around the 0 line. 
@@ -288,10 +285,6 @@ plot(fitted.values(dat), dfbetas_3.9.income, pch = 16, col = rgb(0.3, 0.3,
 #increases as the variation in observed X increases, and increases as the number of data points increases.
 #If a statistical significance test with a small number of data values produces 
 #a surprisingly non-significant P value, then lack of power may be the reason.
-#The best time to avoid such problems is in the design stage of an experiment,
-#when appropriate minimum sample sizes can be determined, perhaps in consultation with a statistician, 
-#before data collection begins.
-
 
 
 
