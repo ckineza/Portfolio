@@ -1,0 +1,194 @@
+---
+author: "Cynthia Kineza"
+output: pdf_document
+---
+
+## The distribution of glucose value deviates from a normal distribution
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+set.seed(1234)
+```
+### Mixture models
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+glucose <- matrix(readRDS("~/Downloads/glucose.rds"))
+colnames(glucose) <- "glucose_meas"
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+qqnorm(glucose)
+qqline(glucose, col = 2,lwd=2,lty=1)
+hist(glucose, main = "Distribution of data" )
+```
+
+## Implement a Gibbs sampler
+
+
+Run at least 10,000 iterations. Compute and plot the autocorrelation of
+$\theta_0$ and $\theta_1$ as well as the effective sample sizes.
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+#simulate zi
+library(pscl)
+
+# Here our iterations are called "s"
+
+library(pscl)
+a <- 1
+b <- 1
+vo <- 10
+muo <- 120
+sigmao <- sqrt(1000)
+tauo <- sqrt(200)
+y = NA
+
+###initial value
+p <- rbeta(1,a,b)
+z <- rbinom(1, 1 , p)+1
+theta1 <- rnorm(1, muo, tauo)
+theta2 <- rnorm(1, muo, tauo)
+variance_1 <- 1/rgamma(1, vo/2, vo*sigmao^2/2)
+variance_2 <- 1/rgamma(1, vo/2, vo*sigmao^2/2)
+min_theta <- min(theta1, theta2)
+max_theta <- max(theta1, theta2)
+
+glucose_final <- as.data.frame(rbind(c(theta1, theta2, variance_1, variance_2, p, y, min_theta, max_theta)))
+colnames(glucose_final) <- c("theta1", "theta2", "var1", "var2", "p", "y", "theta1_tilde", "theta2_tilde")
+
+
+
+
+if (z == 1){ 
+  glucose_final[1,6] = rnorm(1, theta1, sqrt(variance_1))
+} else {
+  glucose_final[1,6] = rnorm(1, theta2, sqrt(variance_2))
+}
+
+zi <- vector(length=length(glucose))
+
+
+set.seed(1)
+for (s in 2:10000)
+{
+for (i in 1:length(glucose))
+{
+
+  y1 = dnorm(glucose[i],theta1, sd=sqrt(variance_1))
+  y2 = dnorm(glucose[i], theta2, sd=sqrt(variance_2))
+  zi[i] = rbinom(1,1,prob = (p*y1/(p*y1 + (1-p)*y2)))
+}
+  
+  #summation of indicator function for zi = 1 = sum(2-zi)
+   summation_1 = sum(zi==1)
+   
+   #summation of indicator function for zi = 2 = sum (zi-1)
+   
+   summation_2 = length(glucose) - summation_1
+   
+   #Lets now update the thetas from its full conditional
+   
+   theta1= rnorm(1,(sum(glucose*zi)*tauo^2 + variance_1*muo) / (variance_1 + tauo^2*summation_1), sd = sqrt(1/(summation_1/variance_1 + 1/tauo^2)))
+   
+   #generate the second theta here from its full conditional 
+
+   theta2 = rnorm(1,(sum(glucose*(1-zi))*tauo^2 + variance_2*muo) /(variance_2 + tauo^2*summation_2), sd = sqrt(1/(summation_2/variance_2 + 1/tauo^2)))
+    
+   #generate sigm21 from its full conidtional, here i am using the first and second theta I obtained above
+   
+variance_1 <- 1/ rgamma(1, (vo+summation_1)/2, (sum(((glucose-theta1)^2)*zi) + sigmao^2*vo)/2)
+
+    
+   
+      #generate sigm22 from its ful conditional, here i am using he first and second theta I obtained above
+    variance_2 <- 1/ rgamma(1, (vo+summation_2)/2, (sum(((glucose-theta2)^2)*(1-zi)) + sigmao^2*vo)/2)
+   
+   
+   #generate p (using the values I got for theta1_all,theta2_all,sigma21_end and sigma22_end)
+   
+   p = rbeta(1,a+summation_1,b+summation_2)
+   
+   
+   #store this values in the pt's row in the matrix glucose_dat
+
+   
+   glucose_final[s,1] = theta1
+   glucose_final[s,2] = theta2
+   glucose_final[s,3] = variance_1
+   glucose_final[s,4] = variance_2
+   glucose_final[s,5] = p
+
+   
+    #updating z 
+   
+   z = rbinom(1,1,p) ### remember here I used 
+   
+   if (z==1)
+   {
+     glucose_final[s,6] = rnorm(1,theta1, sqrt(variance_1))
+     
+   }
+   
+   else
+     
+   {
+     
+     glucose_final[s,6] = rnorm(1,theta2, sqrt(variance_2))
+   }
+  
+   glucose_final[s,7] = min(glucose_final[s,1],glucose_final[s,2]) #theta_min
+   glucose_final[s,8] = max(glucose_final[s,1],glucose_final[s,2]) #theta_max
+   
+
+   
+   
+  
+}
+library(coda)
+acf(glucose_final[,7], type = "correlation", plot=FALSE)
+acf(glucose_final[,8], type = "correlation", plot=FALSE)
+acf(glucose_final[,7], type = "correlation", main = "Autocorrelation for first theta")
+acf(glucose_final[,8], type = "correlation", main = "Autocorrelation for second theta")
+
+effectiveSize(glucose_final[,7])
+effectiveSize(glucose_final[,8]) 
+
+```
+
+For each iterations `s` of the Gibbs sampler, sample
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+hist(glucose_final$y, main = "Histogram of sampling data y")
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+library(ggplot2)
+df <- data.frame(parameter=as.numeric(glucose_final$theta1_tilde),
+                 name=rep(c("theta1_min", "precision"), each=nrow(glucose_final)),
+                 iter=rep(seq_len(nrow(glucose_final)),2))
+
+ggplot(df, aes(iter, parameter)) +
+  geom_line() +
+  facet_wrap(~name, ncol=1, scales="free_y") +
+  xlab("MCMC iteration") + ylab("")
+
+
+df.1 <- data.frame(parameter=as.numeric(glucose_final$theta2_tilde),
+                 name=rep(c("theta2_max", "precision"), each=nrow(glucose_final)),
+                 iter=rep(seq_len(nrow(glucose_final)),2))
+
+ggplot(df.1, aes(iter, parameter)) +
+  geom_line() +
+  facet_wrap(~name, ncol=1, scales="free_y") +
+  xlab("MCMC iteration") + ylab("")
+
+
+```
+
+Joint posterior is difficult to sample directly, easier to sample from the full conditional distribution of each parameter. We used a Gibbs Sampler generates a dependent sequence of parameter values whose distribution converges to the target joint posterior distribution
+
+
+The first thetas were arbitrarily chosen initial values, then the thetas generated in the gibbs sampler depended on the initial thetas. For any initial values, the chain is converging to the posterior.
+Using 10,000 iterations, we used enough samples to approximate our posterior
+
+The original glucose data does not follow a normal distribution (it has two modes, 100, 150), while the empirical distribution of $Y$ approximately follows normal distribution with 121 (approximately) as mean.
+Based on the iteration results, the average of $\theta_1$ is 104.10  while the average of $\theta_2$ is 148.7, which is coherent to the two modes location of the histogram of glucose data.
+
