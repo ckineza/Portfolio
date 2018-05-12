@@ -1,0 +1,871 @@
+---
+title: "Random Forest, Classification, CART"
+author: "Cynthia Kineza"
+date: "4/18/2017"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+#I. Case study in predicting large medical expenditures using CART, logistic regression, random forests: predicting 
+
+__2. Part 1: Classification Tree and Regression Tree CART.__
+
+
+__.Aim of Analysis__
+The aim of this analysis is to predict from the National Medical Expenditure Survey (NMES) data the fraction of  medical expenditures greater or equal to 1,000 and the attributable factors such as having a major smoking disease (including lung cancer, laryngeal cancer, COPD, CHD, stroke, and other cancers ), age, sex, education and poverty status.
+We will apply CART ( classification and regression trees)to predict the size of expenditures, a continous variable, and whether the expenditures exceed a threshold of $1,000 as a binary outcome.
+
+
+__.Methods__
+Using the indicator function 1- TRUE and 0- FALSE of whether or not the medical expenditures is in the threshold, we used classification for prediction when the outcome was dichotomous, categorical(binary)
+and for regression trees, we used continuous variables,it outputs an expected value given a certain output. 
+Classification trees carry information regarding our outcomes(they output the predicted class for a given sample), we can use this later on for prediction using ROC curves and compare our results to the logistic regression, they help us to identify the most important predictors. 
+Prediction Trees are used to predict a response ("Medical Expenditures >1,000") from inputs: MSCD, age, sex, education, and poverty status. At each node of the tree, we check the value of one of the input "x_i" and depending of the (binary) answer we continue to the left or to the right sub_branch. When we reach a leaf we will find the prediction (usually it is a simple statistic of the dataset the leaf represents, like the most common value from the available classes).
+The data was split into a training validation and test data set. This was done for several reasons. Primarily that data set was large but also to improve prediction.
+The output of the decision tree is a machine learning algorithm that partitions the data into subsets. The partitioning process starts with a binary split and continues until no further splits can be made. Various branches of variable length are formed. Pruning reduces the complexity of the final classifier, and hence improves predictive accuracy by the reduction of overfitting.
+The goal of a decision tree is to encapsulate the training data in the smallest possible tree. The rationale for minimizing the tree size is the logical rule that the simplest possible explanation for a set of phenomena is preferred over other explanations. Also, small trees produce decisions faster than large trees, and they are much easier to look at and understand.
+
+__.Classification Tree__
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+set.seed(12345)
+#options(width=70,scipen=2,digits=4)
+library(tree)
+library(rpart)
+library(party)
+library(rpart.plot)
+library(ROCR)
+library(caret)
+library(ipred)
+library(RColorBrewer)
+library(reshape2)
+library(dplyr)
+library(ggplot2)
+library(rattle)
+library(survival)
+library(splines)
+library(randomForest)
+library(pROC)
+library(Hmisc)
+library(randomForest)
+
+    
+load("~/Downloads/nmes.rdata")
+datas = nmes
+dat=nmes
+datas$mscd <- ifelse(datas$lc5+datas$chd5>0,1,0)
+datas$expmore = ifelse(datas$totalexp > 1000,1,0)
+
+vdas = datas
+datas =datas[,c("mscd","lastage","male","educate","povstalb","expmore")]
+datas[datas=="."] = NA
+cc.rows =complete.cases(datas)
+datas=datas[cc.rows,]
+
+
+dat.train = datas[train<-sample(1:nrow(datas), floor(nrow(datas)/2)),]
+dat.test = datas[-train,]
+
+dat.test=data.frame(expmore=dat.test$expmore, lastage=dat.test$lastage,
+mscd=factor(dat.test$mscd),
+educate=factor(dat.test$educate),
+povstalb=factor(dat.test$povstalb),
+male=factor(dat.test$male))
+
+
+dat.train=data.frame(expmore=dat.train$expmore, lastage=dat.train$lastage,
+mscd=factor(dat.train$mscd),
+educate=factor(dat.train$educate),
+povstalb=factor(dat.train$povstalb),
+male=factor(dat.train$male))
+
+
+
+#for a regression tree 
+tree=rpart(expmore~., data = dat.train, method="anova", control= rpart.control(minsize=20, cp=0.0030))
+# Estimated class probabilities
+#dat.train$expmore <- factor(dat.train$expmore)
+tre_view=rpart(expmore~., data = dat.train)
+
+#for a classification tree 
+tree_class=rpart(expmore~., data = dat.train, method="class", control= rpart.control(minsize=20, cp=0.0015))
+#predictions <- predict(tree_class, dat.train, type="class")
+predictions <- predict(tree_class, dat.test, type="class")
+#table(dat.test$expmore, predictions)
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+set.seed(12345)
+  #tree$cptable
+  tree_checking=rpart(expmore~., data = dat.train, method="class")
+  
+  
+    train_idx = sample(nrow(datas), round(nrow(datas)/2), replace = FALSE)
+     X_train = datas[train_idx, -14]
+     X_test = datas[-train_idx, -14]
+     Y_train = datas[train_idx, 14]
+     Y_test = datas[-train_idx, 14]
+     Data_train = datas[train_idx, ]
+     Bag = train(expmore ~., data = Data_train , method = "treebag")
+  
+  # printcp(tree) #display the results
+  # #par(mfrow=c(1,2)) # two plots on one page 
+   plotcp(tree_class) # visualize cross-validation results 
+  # prune the tree 
+ 
+     
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+pruned = prune(tree_class, cp = tree_class$cptable[which.min(tree_class$cptable[,"xerror"]),"CP"])
+
+
+ tree <- rpart(expmore ~ ., data = dat.train, control = rpart.control(cp = 0.003))
+
+
+#prp(pruned, faclen = 0, cex = 0.8, extra = 1, main = "Prune Classification Tree for NMES")
+
+
+#This was a simple and efficient way to create a Decision Tree in R. But are you sure that this is the optimal #‘Decision Tree’ for this data? If not, the following validation checks will help you.
+#Validation of decision tree using the ‘Complexity Parameter’ and cross validated error :
+#To validate the model we use the printcp and plotcp functions. ‘CP’ stands for Complexity Parameter of the tree.
+#Syntax : printcp ( x ) where x is the rpart object.
+#This function provides the optimal prunings based on the cp value.
+
+#We prune the tree to avoid any overfitting of the data. The convention is to have a small tree and the one with least cross validated error given by printcp() function i.e. ‘xerror’.
+
+
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+fancyRpartPlot(pruned, main="Pruned Classification Tree for NMES")
+#fancy plot
+
+```
+
+
+__.Results__
+
+Based on the output of our classification tree, we see that the splits occurs at Poverty level 2,3, 4 and 5 ; Gender; Age <78; Age <62 and  MSCD. 
+The decision tree splits at MSCD:  probability of having a big expenditures having an MSCD is 0.75 while the probability of having a big expenditures given not having MSCD and age younger than 62 years old is 0.27.
+
+Under absence of MSCD, the probability of having a big expenditures given you are older than 78 years old is 0.49 and have education falling in the 1,3,4 category is 0.48 and a 0.64 probability that they have a large expenditures if they are not in the education level(high school , college graduate) level
+
+While for individuals with no MSCD with age less than 78 years old, the probability is 0.37 of having a big medical expenditures, if in addition they belong to the poverty 2,3,4,5 categories (poor, low income, and middle income) then the probability is 0.36.
+On the other hand if they do not belong to the (poor, low income, and middle income) category and they are females then the probability of 0.55 and 0.26 for males.
+
+In summary, the probability of having big expenditures highly depends on MSCD and age. Poverty and education are informative as well.
+
+__.Regression Tree__
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+set.seed(12345)
+library(tree)
+#dat <- nmes[ which(nmes$totalexp >=1000), ]
+dat=nmes
+dat$mscd <- ifelse(dat$lc5+dat$chd5>0,1,0)
+dat$e = log(dat$totalexp+1)
+dat$poverty = as.numeric(dat$povstalb)
+dat$male= as.numeric(dat$male)
+dat$educate = as.numeric(dat$educate)
+dat$age = dat$lastage
+dat=data.frame(mscd=dat$mscd,expenditure=dat$e,poverty=dat$poverty,male=dat$male,educate=dat$educate,age=dat$age)
+
+
+
+dat.train0 = dat[train<-sample(1:nrow(dat), floor(nrow(dat)/2)),]
+dat.test0 = dat[-train,]
+#for a regression tree 
+tree0=rpart(expenditure~., data = dat.train0, method="anova", control= rpart.control(minsize=20, cp=0.001))
+# Estimated class probabilities
+tre_view0=rpart(expenditure~., data = dat.train0)
+treefit = tree(expenditure~.,data=dat.train0)
+tree.model <- tree(expenditure~., data=dat.train0)
+
+ tree0=rpart(expmore~.,data=dat.train,method="anova")
+
+ plotcp(tree0)
+```
+ 
+ 
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+#set.seed(12345)
+pruned0 = prune(tree0, cp = tree0$cptable[which.min(tree0$cptable[,"xerror"]),"CP"])
+fancyRpartPlot(pruned0 ,  main="Pruned Regression Tree for NMES" ) 
+```
+
+
+___Results__
+
+There is 75% individual with MSCD who have big medical expenditures and 33% without MSCD.
+Of those 33%, 27% are younger than 62 years old and 0.4% are older than 62 years old.
+There is therefore a probability of 0.75 of having big medical expenditures if you have an MSCD, and if you do not have an MSCD and are younger than 62 years old, there is a 0.27 probability of having a big medical expenditures and 0.4% otherwise.
+ 
+__Conclusion__
+ As we can see by the outcome of three, the tree is breaking down the most important predictors, when exploring possible coefficients in our logistic regression, we will take into account the splits of the tree.
+The tree informs us (from top to bottom) if the medical expensitures is greater than 1,000: then we should explore individuals by age, gender and those that belong to poverty level(highincome versus lowincome).
+Based on the tree, an interaction between age and MSCD, age and gender could be explored.
+We observe that MSCD and age are the most important factors to predict the probability of big expenditure. Education and poverty status may also be useful for the prediction and should be included in our model.
+
+
+
+
+__.Using Both Classification tree and Regression Tree: which gave almost same splits__
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+dat.train$highincome <- ifelse(dat.train$povstalb==5,"TRUE","FALSE")
+dat.train$agespline64 = ifelse(dat.train$lastage - 64 >0, dat.train$lastage - 64,0)
+dat.train$agespline52 = ifelse(dat.train$lastage - 52 >0, dat.train$lastage - 52,0)
+dat.train$agespline62 = ifelse(dat.train$lastage - 62 >0, dat.train$lastage - 62,0)
+dat.train$agespline74 = ifelse(dat.train$lastage - 74 >0, dat.train$lastage - 74,0)
+#dat.train$poor=(dat.train$povstalb <= 2) here greater than 1000
+
+dat.test$highincome <- ifelse(dat.test$povstalb==5,"TRUE","FALSE")
+dat.test$agespline64 = ifelse(dat.test$lastage - 64 >0, dat.test$lastage - 64,0)
+dat.test$agespline52 = ifelse(dat.test$lastage - 52 >0, dat.test$lastage - 52,0)
+dat.test$agespline62 = ifelse(dat.test$lastage - 62 >0, dat.test$lastage - 62,0)
+dat.test$agespline74 = ifelse(dat.test$lastage - 74 >0, dat.test$lastage - 74,0)
+
+
+
+model=glm(data=dat.train, expmore ~  (male+mscd) * (agespline64) +  highincome + educate ,family=binomial())
+model1=glm(data=dat.train, expmore ~  (male+mscd) * ns(lastage, df=2) +  highincome + educate ,family=binomial())
+model2=glm(data=dat.train, expmore ~  (mscd) * ns(lastage, df=2) + mscd * male  +  highincome + educate ,family=binomial())
+model3=glm(data=dat.train, expmore ~  (mscd) * ns(lastage, df=2) + male * ns(lastage, df=2)   +  highincome + educate ,family=binomial()) #better 
+model4=glm(data=dat.train, expmore ~  (mscd) * ns(lastage, df=2) + male + ns(lastage, df=2)   +  highincome + educate ,family=binomial())
+modelv=glm(data=dat.train, expmore ~  (male+mscd)*ns(lastage, df=2) + (agespline64)+  highincome + educate ,family=binomial())
+
+
+#anova(model3, model1, test='LRT') 
+```
+
+We fit a logistic regression model with main effects for MSCD, gender, and age (with spline terms), as well as all interaction effects between MSCD, gender and age
+Testing spline term at 64 and natural splines with 2 degree of freedom, the LRT suggested that natural splines were more useful. And this makes more sense as we are looking at non linearity at several age values.
+The interaction between mscd and gender was not significant.
+Since our CART model suggested split for those less than poverty level 2,3,4,5. We control for poverty status (binary).
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+ # anova(model, model1, test='LRT') 
+
+fig1<- ggplot(dat.train, aes(x=lastage, y=expmore, group=interaction(mscd, male), colour=mscd, linetype=factor(male))) + geom_jitter(size=0.5) + geom_smooth(size=1.1, alpha=0.5) + ylab('Zero Expenditures') + ggtitle('Figure 1') + xlab("Age") + scale_linetype_manual('Male', values=c(1,3)) + theme_bw() + theme(axis.text.y=element_text(angle=90, hjust=0.5), plot.margin=rep(unit(0,"null"),4), legend.position='bottom', legend.box='horizontal', text=element_text(size=9), legend.text=element_text(size=6)) + scale_x_continuous(breaks=seq(40,80,10))
+
+# anova(model, model_ft, test='LRT') #extended model is better model_ft > model
+```
+
+We perform a likelihood ratio test for the male-ns(age,2) and ns(age,2)-mscd interactions.  We find a statistically significant improvement in model fit by allowing for age-gender or age-MSCD interactions  p = 0.00005 , so we keep these terms from the final model.Therefore, our final model for expenditures greater than 1,000 is:
+
+
+$$
+\text{logit}Pr(Y_i=0) = \beta_0 + \beta_1 (male_i+ mscd_i) ns(age,2)+ \beta_2 HighIncome_i + \beta_3 educate_i.
+$$
+ 
+ 
+__Now, for this final model, we estimate its coefficients and check the model for consistency with the observations by comparing the observed rates within several bins of predicted rates. And check for extremely influential observations in your final model.__
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+fit=model1
+#coefficients(summary(fit))
+
+predata=predict.glm(fit,type="response")
+dat.train$pred=predata
+binsize=100
+binpred=rep(NA,binsize)
+binrate=rep(NA,binsize)
+
+for (i in 1:binsize)
+{
+  if(i!=binsize)
+  {
+    subdata=dat.train[dat.train$pred>=quantile(predata,probs=(i-1)/binsize) & dat.train$pred<quantile(predata,probs=i/binsize),]
+  }
+  else
+  {
+    subdata=dat.train[dat.train$pred>=quantile(predata,probs=(i-1)/binsize) & dat.train$pred<=quantile(predata,probs=i/binsize),]
+  }
+  binpred[i]=mean(subdata$pred)
+  binrate[i]=mean(subdata$expmore)
+}
+
+  #dat.train$expmore = as.numeric(levels(dat.train$expmore))[dat.train$expmore]
+  plot(dat.train$pred,jitter(dat.train$expmore),pch=16,cex=0.4,col=rgb(0.3,0.3,0.4,0.4),xlab="predicted rates",ylab="observed")
+  points(binpred,binrate,col=rgb(0.9,0.4,0.6,0.8),pch=16)
+  lines(ksmooth(binpred,binrate,kernel="normal",bandwidth=0.1,range.x=range(binpred,na.rm = TRUE)),col=rgb(0.2,0.8,0.9,1),lwd=2)
+abline(0,1,col=rgb(0.3,0.3,0.8,0.8),lwd=2,lty=2)
+
+```
+
+This model shows good consistency, since the smooth curve (blue solid line) of observed rates - predicted rates for 100 bins are similar to the 45° line.
+
+__ checking for extremely influential observations in final model.__
+
+To explore the extremely influential observations, we can use "dffits" to drop those outliers. Here we use diffits(fit)$>=0.2$ as the criteria and dropped $13$ observations. We then fit the new model using the new dataset and the predicted values of the models before and after dropping the outliers were compared.
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+df=dffits(fit)
+dropdata=dat.train[abs(df)<0.2,]
+fit.drop=glm(fit$formula,family=binomial(),data=dropdata)
+pred1=predict(fit,dat.train[dat.train$mscd==1,],type="response")
+pred0=predict(fit,dat.train[dat.train$mscd==0,],type="response")
+pred1.drop=predict(fit.drop,dropdata[dropdata$mscd==1,],type="response")
+pred0.drop=predict(fit.drop,dropdata[dropdata$mscd==0,],type="response")
+cw=coefficients(fit)
+sw=sqrt(diag(vcov(fit)))
+co=coefficients(fit.drop)
+so=sqrt(diag(vcov(fit.drop)))
+plot(dat.train[dat.train$mscd==1,]$lastage,pred1,xlab="age",ylab="predicted value",main="MSCD=1",pch=16,cex=0.8,col=rgb(0.9,0.4,0.6,0.8),ylim=c(0.70,0.80), type ="n")
+#points(dropdata[dropdata$mscd==1,]$lastage,pred1.drop,ylim=c(0.70,0.80),pch="+",cex=0.8,col=rgb(0.4,0.8,0.6,0.8))
+lines(ksmooth(dat.train[dat.train$mscd==1,]$lastage,pred1,kernel="normal",bandwidth = 5),col="red",lwd=3)
+lines(ksmooth(dropdata[dropdata$mscd==1,]$lastage,pred1.drop,kernel="normal",bandwidth = 5),col="green",lwd=2)
+#legend("topright",legend=c("before dropping","after dropping"),pch=c(16,3),col=c(rgb(0.9,0.4,0.6,0.8),rgb(0.4,0.8,0.6,0.8)),cex=0.8)
+legend("topleft",legend=c("smooth curve before dropping","smooth curve after dropping"),lwd=c(3,2),col=c("red","green"))
+#table(dat.train$mscd[abs(df)>=0.3],dat.train$lastage[abs(df)>=0.3])
+# 
+ plot(dat.train[dat.train$mscd==0,]$lastage,pred0,xlab="age",ylab="predicted value",main="MSCD=0",pch=16,cex=0.8,col=rgb(0.9,0.4,0.6,0.8), type ="n")
+ #points(dropdata[dropdata$mscd==0,]$lastage,pred0.drop,pch="+",cex=0.8,col=rgb(0.4,0.8,0.6,0.8))
+ lines(ksmooth(dat.train[dat.train$mscd==0,]$lastage,pred0,kernel="normal",bandwidth = 5),col="red",lwd=3)
+ lines(ksmooth(dropdata[dropdata$mscd==0,]$lastage,pred0.drop,kernel="normal",bandwidth = 5),col="green",lwd=2)
+ #legend("topright",legend=c("before dropping","after dropping"),pch=c(16,3),col=c(rgb(0.9,0.4,0.6,0.8),rgb(0.4,0.8,0.6,0.8)),cex=0.8)
+ legend("topleft",legend=c("smooth curve before dropping","smooth curve after dropping"),lwd=c(3,2),col=c("red","green"))
+ #table(dat.train$mscd[abs(df)>=0.3],dat.train$lastage[abs(df)>=0.3])
+
+```
+
+__.Table__
+
+
+Predictor         | Beta (with outliers)    | Std (with)  | Beta (without outliers)    | Std (without) 
+------------------|---------|---------|---------|------------|-----------|-----------------------------|--------------
+Intercept    | -0.92 | 0.12 | -0.90 | 0.12 |
+mscdTRUE    | 1.97 | 0.36 | 3.01 | 0.47 |
+ns(lastage,df = 3)1      | 1.37 |  0.20 | 1.36 | 0.20 |
+ns(lastage,df = 3)2      | 1.42 |  0.19 | 1.4 | 0.19 |
+male | -0.78 | 0.14 | -0.81 | 0.14 |
+highincomeTRUE     | 0.028 | 0.059 | 0.021 | 0.059 |
+EducateTRUE     | 0.06 | 0.10 | 0.06 | 0.10 |
+mscdTRUE*ns(1)       | 1.26 | 0.30 |  1.30 | 0.30 |
+mscdTRUE*ns(2)       |  -0.09 | 0.30 | -0.15 | 0.30 |
+male*ns(1)           | -0.12| 0.08 | -0.12 | 0.08 |
+male*ns(2)           | -0.33 | 0.09 | -0.34 | 0.099 |
+
+
+
+We can observe a very substantial change of the estimate for people with MSCD, especially when age $\in [40,60]$ and $\in [80,90]$.
+The high influential points are mostly young people with MSCD, for those without MSCD there seem to be no particular influential points. These samples can mislead us when combining them with other covariates. Therefore we remove these observations.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+#
+# plot of observed y's vs predicted values - weather-person plot
+#
+# par(mfrow=c(1,2))
+# dat.train$pE.1 = predict(model.3)
+# plot(dat.train$pE.1,jitter(dat.train$expmore,amount=.20),xlim=c(-2,2),ylim=c(-2,1.2),xlab="Predicted value",ylab="Exp >$1,000",main="ns(age,3)+mscd",pch=".",col="black")
+# dat.train$sm1=fitted.values(model.3)
+# points(dat.train$pE.1,dat.train$sm1,col="blue",pch="*")
+# abline(0,1)
+
+
+```
+
+
+__ 3. Now use random forests to tackle the same prediction problem.__
+
+Random forests provide an improvement over bagged trees by way of a small tweak that decorrelates the trees. This reduces the variance when we average the trees. As in bagging, we build a number of decision trees on bootstrapped training samples. But when building these decision trees, each time a split in a tree is considered, a random selection of m predictors is chosen as split candidates from the full set of p predictors. The split is allowed to use only one of those m predictors.
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+train_idx = sample(nrow(datas), round(nrow(datas)/2), replace = FALSE)
+X_train = datas[train_idx, -14]
+X_test = datas[-train_idx, -14]
+Y_train =datas[train_idx, 14]
+Y_test = datas[-train_idx, 14]
+Data_train = datas[train_idx, ]
+Bag = train(expmore ~ ., data = Data_train, method = "treebag")
+
+# p = ncol(datas) - 1
+# p.hf = round(p/2)
+# p.sq = sqrt(p)
+# rf.p = randomForest(X_train, Y_train, xtest = X_test, ytest = Y_test, mtry = p, ntree = 100)
+# rf.p.hf = randomForest(X_train, Y_train, xtest = X_test, ytest = Y_test, mtry = p.hf, ntree = 100)
+# rf.p.sq = randomForest(X_train, Y_train, xtest = X_test, ytest = Y_test, mtry = p.sq, ntree = 100)
+# op = par(mai = c(0.5, 0.5, 0.1, 0.1), oma = c(0.1, 0.1, 0, 0))
+# ######### 
+# plot(1:500, rf.p$test$mse, col = "aquamarine4", type = "l", xlab = "Number of Trees", ylab = "Test MSE", 
+#     ylim = c(10, 30))
+# points(1:500, rf.p.hf$test$mse, col = "darkviolet", type = "l")
+# points(1:500, rf.p.sq$test$mse, col = "dodgerblue2", type = "l")
+# legend("topright", c("m=p", "m=p/2", "m=sqrt(p)"), col = c("aquamarine4", "darkviolet", "dodgerblue2"), 
+#     cex = 1, lty = 1)
+
+Boost = train(expmore ~ ., method = "gbm", data = Data_train, verbose = F, trControl = trainControl(method = "cv", 
+    number = 3))
+
+Pred_Boost = predict(Boost, X_test)
+# cm3$overall
+varImp(Boost)
+
+plot(varImp(Boost), top = 8)
+```
+
+After fitting a separate decision tree to each copy, and then combining all of the trees, we get a single predictive model.
+Here our model shows us that mscd predicts best medical expenditures less than 1,000, up next is Age, education and gender in that order.
+
+__ 4. For each of the three prediction methods, I am going to calculate the sensitivity and specificity for classifying a person as having a large expenditure at a threshold of my choosing.__
+
+__1.Using Logistic Regression Model.__
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# drop the influential observations
+nmes = dropdata
+fit1 = fit.drop
+fit0 = glm(expmore ~ (male + mscd) * ns(lastage, df = 2) + male + highincome + educate, data = nmes, family = "binomial")
+
+# generate predictions without cross-validation using our model (1) and
+# the simple model (0)
+nmes$pred1_nocv = fitted.values(fit1)
+nmes$pred0_nocv = fitted.values(fit0)
+
+# now perform cross-validation
+id_rand = runif(nrow(nmes))
+n_fold = 10
+cv_group = ntile(id_rand, n_fold)
+
+cv_results1 = array(0, c(0, 2))
+colnames(cv_results1) = c("Truth", "Prob")
+cv_results0 = cv_results1
+# begin cv
+
+for (i in 1:n_fold) {
+    data_train = nmes[cv_group != i, ]
+    data_test = nmes[cv_group == i, ]
+    fit1_temp = glm(fit1$formula, data = data_train, family = binomial())
+    fit0_temp = glm(fit0$formula, data = data_train, family = binomial())
+    cv_results1 = rbind(cv_results1, data.frame(Truth = data_test$expmore, 
+        Prob = predict(fit1_temp, data_test, type = "response")))
+    cv_results0 = rbind(cv_results0, data.frame(Truth = data_test$expmore, 
+        Prob = predict(fit0_temp, data_test, type = "response")))
+}
+
+#compute ROC curve
+roc1_nocv=roc(response=nmes$expmore, predictor=nmes$pred1_nocv)
+roc0_nocv=roc(response=nmes$expmore, predictor=nmes$pred0_nocv)
+roc1_cv=roc(response=cv_results1$Truth, predictor=cv_results1$Prob)
+roc0_cv=roc(response=cv_results0$Truth, predictor=cv_results0$Prob)
+
+rocs=list(roc1_nocv, roc0_nocv, roc1_cv, roc0_cv)
+aucs=round(sapply(rocs, auc), 3)
+
+models=c('Full Model, no CV','Main Effects Model, no CV',
+                'Full Model, CV','Main Effects Model, CV')
+
+# pal=c('black','blue')
+# plot(roc1_nocv, col=pal[1], type='l', xlim=c(1.0,0.0))
+# lines(roc0_nocv, col=pal[2])
+# lines(roc1_cv, col=pal[1], lty=3)
+# lines(roc0_cv, col=pal[2], lty=3)
+# legend('bottomright', legend=paste0(models, ' (AUC = ', aucs, ')'),
+#        col=rep(pal,2), lwd=2, lty=c(1,1,3,3), cex=0.5)
+
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+glm.yhat = predict.glm(model1,newdata=dat.test,type="response") 
+jag.glm=table(glm.yhat>0.3,dat.test$expmore);
+glm.sens=jag.glm[4]/(jag.glm[4]+jag.glm[3]);
+glm.spec=jag.glm[1]/(jag.glm[1]+jag.glm[2]); 
+pred.glm.test = prediction(glm.yhat,dat.test$expmore)
+perf.glm.test=performance(pred.glm.test,"tpr","fpr")
+plot(perf.glm.test);
+abline(0,1)
+
+ttst =performance(pred.glm.test,"auc")
+#ttst@y.values
+
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# plot(0,type="n",
+# xlim=range(c(roc1_cv$thresholds,roc0_cv$thresholds),finite=TRUE),
+# ylim=c(0,1),
+# ylab='Sensitivity/Specificity',
+# xlab='Threshold',main="Sens/Spec v.s. Threshold for C.V. ROC")
+# lines(roc1_cv$thresholds,roc1_cv$sensitivities,col=pal[1],lwd=2)
+# lines(roc0_cv$thresholds,roc0_cv$sensitivities,col=pal[2],lwd=2)
+# lines(roc1_cv$thresholds,roc1_cv$specificities,col=pal[1],lwd=2)
+# lines(roc0_cv$thresholds,roc0_cv$specificities,col=pal[2],lwd=2)
+
+# glm.yhat = predict.glm(fit0 ,newdata=nmes,type="response") 
+# j.glm=table(glm.yhat>thresh,dat1.test$big); 
+# glm.sens=j.glm[4]/(j.glm[4]+j.glm[3]);
+# glm.spec=j.glm[1]/(j.glm[1]+j.glm[2]); 
+# pred.glm.test = prediction(glm.yhat,dat1.test$big) 
+# perf.glm.test=performance(pred.glm.test,"tpr","fpr")
+# plot(perf.glm.test);abline(0,1)
+
+
+
+```
+
+__Using Random Forest__
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+Boost = train(expmore ~ ., method = "gbm", data = Data_train, verbose = F, trControl = trainControl(method = "cv", 
+    number = 3))
+Pred_Boost = predict(Boost, X_test)
+dat.train = datas[train<-sample(1:nrow(datas), floor(nrow(datas)/2)),]
+dat.test = datas[-train,]
+# out-of-sample errors of regression tree model using validation dataset 
+##  regression tree model
+# set.seed(123)
+ Mod0 <- train(expmore ~ .,data=dat.train, method="rpart")
+pred0 <- predict(Mod0, dat.test)
+#random forest
+intrain <- createDataPartition(y = datas$expmore, p = 0.7, list = FALSE)
+train <- datas[intrain, ]
+test <- datas[-intrain, ]
+#random forest
+
+# Boost = train(expmore ~ ., method = "rf", data = dat.train, importance = T, trControl = trainControl(method = "cv", 
+#     number = 3))
+# Pred_Boost = predict(Boost, test)
+# cm0 = confusionMatrix(Pred_Boost, dat.test$expmore)
+
+# rf <- randomForest (expmore~., data=dat.train);
+# OOB.votes <- predict(rf,dat.test);
+# OOB.pred <- OOB.votes[,2];
+# pred.obj <- prediction (OOB.pred,dat.train$expmore);
+# RP.perf <- performance(pred.obj, "rec","prec");
+# plot (RP.perf);
+# ROC.perf <- performance(pred.obj, "fpr","tpr");
+# plot (ROC.perf);
+
+# rfFit <- train(expmore ~ ., data = dat.train,
+#                method = "rf",
+#                importance = TRUE, ntree = 500,
+#                trControl =  trainControl(method = "cv",number = 3),
+#                 maximize = TRUE)
+# 
+# # rfPred <- predict.train(rfFit, dat.train, type = "raw")
+# 
+# dat.train<- subset(dat.train, select = -mscd )
+#  dat.train$expmore = as.factor(dat.train$expmore)
+#   modFit2 <- randomForest(expmore ~. , data=dat.train)
+#   # Predicting on the second training set:
+#   prediction2 <- predict(modFit2, newdata = dat.test)
+#   cm0 = confusionMatrix(prediction2 , dat.test$expmore) 
+
+ #prepare model for ROC Curve
+  # test.forest = predict(modFit2, newdata = dat.test)
+  # forestpred = prediction(test.forest[,1], dat.test$expmore)
+  # forestperf = performance(forestpred, "tpr", "fpr")
+  # plot(perf, main="ROC", colorize=T)
+  # plot(bagperf, col=2, add=TRUE)
+  # plot(perf, col=1, add=TRUE)
+  # plot(forestperf, col=3, add=TRUE)
+  # legend(0.6, 0.6, c(‘ctree’, ‘bagging’, ‘rforest’), 1:3)
+
+
+# tree.yhat = as.vector(predict(tree0, newdata = dat1.test, na.action = na.pass)[,2]) j=table(tree.yhat>thresh,dat1.test$big); tree.sens=j[4]/(j[4]+j[3]);tree.spec=j[1]/(j[1]+j[2]);
+# pred.tree.test = prediction(tree.yhat,dat1.test$big) perf.tree.test=performance(pred.tree.test,"tpr","fpr") plot(perf.tree.test);abline(0,1)
+  
+
+# adult.rf.pr = predict(modFit2,type="prob",dat.train$expmore)[,2]
+# adult.rf.pred = prediction(adult.rf.pr, dat.test$expmore)
+# adult.rf.perf = performance(adult.rf.pred,"tpr","fpr")
+# plot(adult.rf.perf,main="ROC Curve for Random Forest",col=2,lwd=2)
+# abline(a=0,b=1,lwd=2,lty=2,col="gray")
+
+# newpredict = as.vector(predict(Boost, newdata = dat.test, na.action = na.pass)[,2]) tablepred=table(newpredict>0.5,dat.test$expmore); tree.sens=tablepred[4]/(tablepred[4]+tablepred[3]);tree.spec=tablepred[1]/(tablepred[1]+tablepred[2]);
+# predicttesting = prediction(newpredict,dat.test$expmore) perf.tree.test=performance(pred.tree.test,"tpr","fpr") plot(predicttesting);abline(0,1)
+
+
+
+##classification model
+#predictions <- predict(tree_class, dat.test, type="class")
+
+datas$expmore = as.factor(datas$expmore)
+treemod <- tree(expmore ~ ., data = dat.train )
+cv.trees <- cv.tree(treemod, FUN = prune.tree)
+prune.trees <- prune.tree(treemod, best = 3)
+tree_class=rpart(expmore~., data = dat.train, method="class", control= rpart.control(minsize=20, cp=0.0008))
+#treepred <- predict(prune.trees, newdata = test,  type = "class")
+predictions  <- predict(tree_class, newdata = dat.test,  type = "class")
+cm1 = confusionMatrix(predictions, dat.test$expmore)
+cm1
+
+#par(mfrow=c(2,2))
+# plot(cm1$byClass, main="classification tree", xlab = "sensitivity", ylab = "specificity",xlim=c(0.4, 1.005), ylim=c(0.2,1))
+# text("sensitivity", "specificy", labels=LETTERS[1:5], cex= 0.7)
+# plot(cm0$byClass, main="random forest", xlim=c(0.2, 1))
+
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+x.train = dat.train[,2:6]
+y.train = as.factor(dat.train[,1]) 
+x.test = dat.test[,2:6]
+y.test = as.factor(dat.test[,1])
+randomfore = randomForest(x.train, y.train, xtest = x.test, ytest = y.test, mtry = 2, ntree = 500, keep.forest = TRUE)
+randomhat = predict(randomfore,newdata = dat.test,type='prob') 
+j.rf=table(randomhat[,2]>0.3,dat.test$expmore); 
+rf.sens=j.rf[4]/(j.rf[4]+j.rf[3]);
+rf.spec=j.rf[1]/(j.rf[1]+j.rf[2]);
+pred.rf.test = prediction(randomhat[,2],dat.test$expmore) 
+perf.rf.test=performance(pred.rf.test,"tpr","fpr") 
+plot(perf.rf.test,main="Random Forest");
+abline(0,1)
+
+auc.tree.test=performance(pred.rf.test,"auc") 
+#auc.tree.test@y.values
+```
+
+
+__Using Classification___
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+ tree.value = as.vector(predict(tree_class, newdata = dat.test, na.action = na.pass)[,2])
+blap=table(tree.value>0.4,dat.test$expmore)
+ tree.sens=blap[4]/(blap[4]+blap[3]);tree.spec=blap[1]/(blap[1]+blap[2])
+ pred.tree.test = prediction(tree.value,dat.test$expmore) 
+ perf.tree.test=performance(pred.tree.test,"tpr","fpr")
+ plot(perf.tree.test, main = "classification");abline(0,1)
+ auc.tree.test=performance(pred.tree.test,"auc") 
+#auc.tree.test@y.values
+
+
+```
+
+In comparing the three techniques: CART, logistic regression and Random Forest, there are three criterias we took into consideration:
+1. Stability : The model should have similar performance metrics across both training and validation
+2. Performance on Training data : This is because an over fit model is harmful
+3. Performance on Validation data 
+
+In testing the three models (CART, logistic regression and Random Forest) using the test dataset, specifying the threshold for the calculation to be 0.3, the sensitivity and specificy was: 0.70 and 0.4 for CART, 0.71 and 0.4 for the logistic regression model, 0.3 and 0.8 for the random forest model.
+Sensitivity is lowest for random forest and highest specificity. The predictive powers of those three models based on area under the ROC curve are:
+0.6921989 for Logistic Regression
+0.6086 for  Classification
+0.6555843 for Random Forest
+CART is very easy to read, it is a simplistic model, however the splits vary and it is hard to estimate the possible interaction terms,
+but logistic regression has the advantage of including continuous and binary variables, it can include splines and interaction terms, however for all of those two above they are overshadowed by the strength of random forest. 
+Random forest has a very high accuracy on the training population, because it uses many different characteristics to make a prediction. But, because of the same reason, it sometimes over fits the model on the data
+
+
+##II. Conditional Logistic Regression 
+
+__Objective__
+In this analysis, we are interested in observing whether women who use estrogens, have a history of gall-bladder disease and hypertension are at increased risk of endometrial cancer. There is a belief that their relative risks may be modified by age or obesity and that the multiple risk factors may act synergistically
+
+__ Methods__
+
+In order to see the risk of having endometrial cancer given the factors such as: gall bladder disease, use of estrogens, having hypertension, we use graphical tools. Below is a very useful graph that looks at each factor
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+mydat_endo <- read.table("~/Downloads/endometrial_copy-1.txt")
+names(mydat_endo)=c('set','case','age','ageg','est','gall','hyp','ob','non_estro')
+#reduce factors in the variables 1/0 or 0/1/2 
+mydat_endo[,c('est','gall','hyp','ob','non')]=mydat_endo[,c('est','gall','hyp','ob','non_estro')] - 1
+mydat_endo$ob=factor(mydat_endo$ob)
+
+fit.clr.2 <-clogit(case ~ est + gall + hyp + strata(set), data = mydat_endo) # this is matched pair =1:4
+fitted.values <- predict(fit.clr.2, type = "expected")
+#compute probabilities for 1:4 matched pair
+expit <- function(x){
+  p <- exp(x)/(1+exp(x))
+  return(p)
+}
+fitrl=clogit(case ~ est*gall + strata(set), data=mydat_endo)
+fitted.values.1 <- predict(fitrl, type = "expected")
+mydat_endo$predprop <- expit(fitted.values.1)
+
+# newDataFrame = melt(oldDataFrame, id = c(constant variables), measured = c(variables that change across columns, this arethe ones
+#that will be in the repeated in the column variable))
+restructuredData1=melt(mydat_endo, id.vars=c('set','case','age','ageg','ob','non_estro'), measure.vars = c("est","gall","hyp"))
+#I would like to the proportion of cases, binomial confidence interval bases on binomial distributed P, the proportion
+#successes.
+
+
+endo_transf=dplyr::summarise(group_by(restructuredData1, case, variable),
+                      count = mean(value),
+                      p=mean(value), 
+                      n=n(),Lower.bound=p-1.96*sqrt(p*(1-p)/n), 
+                      Upper.bound=p+1.96*sqrt(p*(1-p)/n))
+
+ ggplot(endo_transf, aes(x=factor(case), group=case)) + geom_point(aes(y=p)) + 
+   geom_errorbar(aes(ymin=Lower.bound, ymax= Upper.bound),position=position_dodge(.9)) +
+   facet_grid(. ~ variable) + theme_bw() + ggtitle("Display 1")
+ 
+ 
+ 
+ 
+
+```
+
+
+In display 1: we observe that cases have substantially higher rates of estrogen usage, in addition the difference between cases and controls is significant we can see that by looking at the error bars, the standard error bars do not overlap, there is a significant gap between them; 
+For gallblader: there is a higher rates for cases and the difference between cases and controls is significant (the standard error bars do not overlap )
+For hypertension, we observe that cases have higher rates of hypertension but the standard error bars do overlap slightly ( the difference between the two means of cases and controls is not statistically significant).
+
+In the figure above, we can see that there is a very significant difference between cases with and without exposure to estrogens, the medians are very off between the two. The cases with exposure of estrogren lie higher than cases without estrogen exposure.It looks like 50% of the data for cases with exposure to estrogens have a higher probability of endometrial cancer than cases with no exposure to estrogens.It will be therefore crucial to include estrogen in our model, since it is very significant, and explore its interaction with other elements. 
+In addition, above, we can see that there is a very significant difference between cases with and without gall bladder, the medians are very off between the two. The probability of having a endometrial cancer and gall bladder has a range slighly greater than probability of having endometrial cancer but not gall bladder. Gall bladder and case of endometrial do seem to have a strong relation. 
+In summary, we determine that there is a significant association between endometrial cancer and gall-bladder.
+and between endometrial cancer and Estrogen use.
+A plot of age against cases was found to have an almost constant relationship (although there is some very small subtle changes of slope (around age = 67 and 78 but at the most it is pretty linear), which makes sense intuitively the age range of our study population is 53 to 83, this age population must be having almost same risk of getting endometrial cancer.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+require(gridExtra)
+ plot1 = ggplot(mydat_endo, aes(x=age, y= case,group = interaction(est), colour = factor(est))) +geom_smooth(span=0.7) + geom_point()+ggtitle("Figure1 : Cases vs Age with or w/o estrogen ")
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+
+plot2 = ggplot(mydat_endo, aes(x=age, y= case,group = interaction(gall), colour = factor(gall))) +geom_smooth(span=0.7) + geom_point()+ggtitle("Figure 2 :Cases vs Age with or w/o gall bladder ")
+
+# grid.arrange(plot1, plot2, ncol=2)
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# ggplot(mydat_endo, aes(x=age, y= case,group = interaction(hyp), colour = factor(hyp))) +geom_smooth(span=0.7) + geom_point()+ggtitle(" Display 2: Cases vs Age with  or w/o hypertension")
+```
+
+__Lets Explore the 1-1 design, since the dataset is relatively small, interaction will be small to identify correctly; we need to make sure our inferences above are correct. I will therefore set our alpha value (level of significance) to 0.1__
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(survival)
+inds <- seq(from=2, to=nrow(mydat_endo),5) # control 
+case <- seq(from=1, to=nrow(mydat_endo),5) # case
+Design <- c(inds,case) #vector for one to one 
+fit1=clogit(case ~ est + gall + hyp + strata(set), data=mydat_endo[Design,])
+fit11=clogit(case ~ est * gall + strata(set), data=mydat_endo[Design,])
+
+#coefficients(summary(fit1))
+```
+
+We find that hypertension is not associated with risk of endometrial cancer and therefore drop it from future models
+p = (`r coefficients(summary(fit1))[3,5]`).
+Estrogen use p = 0.00039 and history of gallbladder disease (p= `r coefficients(summary(fit11))[2,5]`) both appear to have a statistically significant association with higher risk of endometrial cancer.  The interaction effect of the two risk factors is marginally statistically significant (p =`r coefficients(summary(fit11))[3,5]`), this could mean that we need these two to be an interaction terms not in an additive format.
+Estrogen use and gallbladder disease act synergistically in increasing risk of endometrial cancer.
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+### Exploratory Analysis: Use of Boxplots to Analyse interactions
+fit.clr.2 <-clogit(case ~ est + gall + hyp + strata(set), data = mydat_endo) # this is matched pair =1:4
+fitted.values <- predict(fit.clr.2, type = "expected")
+#compute probabilities for 1:4 matched pair
+expit <- function(x){
+  p <- exp(x)/(1+exp(x))
+  return(p)
+}
+fitrl=clogit(case ~ est*gall + strata(set), data=mydat_endo)
+fitted.values.1 <- predict(fitrl, type = "expected")
+mydat_endo$predprop <- expit(fitted.values.1)
+
+
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+
+plot3 = ggplot(mydat_endo, aes(case, predprop, fill=interaction(case,est), dodge=est)) +
+stat_boxplot(geom ='errorbar')+ geom_boxplot()+ggtitle("Figure 3:Probability of case, interation of Estrogen")+ scale_fill_manual(values=c("pink","sky blue","magenta2","seagreen2")) + xlab("case") +ylab("Probability")
+plot3
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+plot4 = ggplot(mydat_endo, aes(case, predprop, fill=interaction(case,gall), dodge=gall)) +
+    stat_boxplot(geom ='errorbar')+
+    geom_boxplot()+ggtitle("Figure 4: Probability of case, interation of Gall Bladder")+
+    scale_fill_manual(values=c("blue","green","red","cyan"))+ xlab("case") +ylab("Probability")
+plot4
+
+
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+fit2=clogit(case ~ est*gall + strata(set), data=mydat_endo[Design,])
+#coefficients(summary(fit2))
+Design.fit.clr <-clogit(case ~ est + gall + hyp + strata(set), data = mydat_endo[Design,]) #one to one
+Design.fit.clr.1 <-clogit(case ~ est + gall + est:gall+ hyp + strata(set), data = mydat_endo[Design,])
+fit <- clogit(case ~ age, data = mydat_endo[Design,]) 
+```
+
+Since we observed that hypertension is not associated with risk of endometrial cancer and we decide to disregard it from our models.
+
+__Lets Explore the 1-4 design. We add interaction terms with age and obesity to the model, and perform likelihood ratio tests to test for the significance of those effects. Since the dataset is relatively small, interaction will be small to identify correctly; we need to make sure our inferences above are correct. I will therefore set our alpha value (level of significance) to 0.1__
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+fitll=clogit(case ~ est + gall + strata(set), data=mydat_endo)
+st = coefficients(summary(fitll))
+fitl=clogit(case ~ (est + gall)*age + strata(set), data=mydat_endo)
+ty = coefficients(summary(fitl))
+#anova(fitll, fitl, test='LRT')[2,4]
+```
+By fitting a model with interaction terms on estrogen and gallblader, we can conclude that the interaction of age with estrogen and gall bladder is not significant, (p = `r anova(fitll, fitl, test='LRT')[2,4]`), Age does not appear to affect the positive association of gall bladder disease and estrogen use on risk of endometrial cancer.
+
+We now test for a modifying effect of obesity, where 0 = No, 1= Yes and 2 = Unknown.
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+fit3=clogit(case ~ (est + gall)*ob + strata(set), data=mydat_endo)
+fit333=clogit(case ~ est + gall + ob + strata(set), data=mydat_endo)
+#coefficients(summary(fit3))
+#anova(fit3, fit333, test='LRT')[2,4]
+fit39=clogit(case ~ est * gall + strata(set), data=mydat_endo)
+```
+
+Obesity also does not appear to moderate the association between the risk factors and risk of endometrial cancer, for all levels (0=No, 1=Yes and 2=Unknown) and all model designs. Using Likelihood ratio test, we compare a model of estrogen and gall with interaction of obesity with a model without the interactions and (p = `r anova(fit3, fit333, test='LRT')[2,4]`). 
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+fitrl=clogit(case ~ est*gall + strata(set), data=mydat_endo)
+#coefficients(summary(fitrl))
+coef=round(coefficients(fitrl),2)
+CI=round(confint(fitrl),2)
+var=c(1,1,1) %*% vcov(fitrl) %*% c(1,1,1)
+CI_=round(sum(coef) + c(-1,1)*1.96*sqrt(var),2)
+```
+Just as in the 1-to-1 model, the interaction between estrogen use and history of gallbladder disease is statistically significant and has a negative coefficient  (p = `r coefficients(summary(fitrl))[3,5]`). Estrogen use and gallbladder disease are not just additive. The log odds of endometrial cancer for subjects with estrogen use only is `r format(coef[1],nsmall=2)` (95% CI: [`r format(CI[1,1],nsmall=2)`, `r format(CI[1,2],nsmall=2)`]).
+
+For subjects with history of gallbladder disease only is `r coef[2]` (95% CI: [`r format(CI[2,1],nsmall=2)`, `r format(CI[2,2],nsmall=2)`]), and as far as subjects that have both is `r sum(coef)` (95% CI: [`r format(CI_[1],nsmall=2)`, `r format(CI_[2],nsmall=2)`]).  
+
+Observation: subjects with both risk factors (gall bladder and estrogen) have only slightly higher log odds of endometrial cancer than subjects with only a single risk factor.
+Exploring the interaction of hypertension and obesity, there is somewhat a significance level for those with obesity, but the relationship is unclear and it will not act synergistically. For the purpose of the scientific question, we will focus on the main factors.
+
+__Figure3: Confidence Interval Using both model (1-1 Design and 1-4 Design)__
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+fl=clogit(case ~ est*gall + strata(set), data=mydat_endo[Design,]) 
+fb=clogit(case ~ est*gall + strata(set), data=mydat_endo)
+#Creating a Plot for Estrogen and GallBladder 
+Con1=as.data.frame(round(confint(fl),2))
+Con4=as.data.frame(round(confint(fb),2))
+names(Con1)=names(Con4)=c('LowerB','UpperB')
+Con1$estimate=coef(fl)
+Con4$estimate=coef(fb)
+Con1$variable=Con4$variable=rownames(Con1)
+Con1$model='1:1 Design'
+Con4$model='1:4 Design'
+CI=rbind(Con1, Con4)
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+ggplot(CI, aes(x=variable, group=model, colour=model)) + 
+geom_point(aes(y=estimate)) +
+geom_errorbar(aes(ymin=LowerB, ymax=UpperB)) + theme_bw()
+odds=round(exp(c(coef(fitrl)[1:2], sum(coef(fitrl)))),2)
+CI=round(exp(rbind(confint(fitrl)[1:2,], CI_)),2)
+```
+Observation based on plot: 1-4 Design confidence intervals appear to be less wider than those of the 1-1 Design 
+
+__Conclusion__
+We found that both estrogen use and history of gallbladder disease increase the risk of endometrial cancer.  They act better together than when they are controlled separately.  This means that, considering these factors as being on the log scale, the risk associated with having both factors influence endometrial cancer is greater than the risk associated with having only one factor. 
+Estimated odds ratio of being a case for subjects with estrogen use versus without is $`r format(odds[1],nsmall=2)`$ (95% CI: $[`r format(CI[1,1],nsmall=2)`, `r format(CI[1,2],nsmall=2)`]$). 
+While estimated odds ratio of being a case for subjects with a history of gallbladder disease versus without was $`r format(odds[2], nsmall=2)`$ (95% CI: $[`r format(CI[2,1],nsmall=2)`, `r format(CI[2,2],nsmall=2)`]$)
+And lastly estimated odds ratio of being a case for subjects with both estrogen use and gallbladder disease versus having neither was $`r format(odds[3], nsmall=2)`$ (95% CI: $[`r format(CI[3,1],nsmall=2)`, `r format(CI[3,2],nsmall=2)`]$), being approximately double the odds ratio from either risk factor alone.
+We also observed that obesity and age did not impact the probability of having a case ( endometrial cancer), as a result we excluded them from our final model as they were found irrelevant in informing us about the risk of endometrial cancer.
+
+\begin{align*}
+\text{logit}Pr(Y_i=1) &= \beta_0 + \beta_1 Estr_i + \beta_2 Gall_i +  \beta_4 Gall_i Estr_i
+\end{align*}
+
+
+
+
+
