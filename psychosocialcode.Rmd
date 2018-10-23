@@ -1,0 +1,154 @@
+---
+title: "Psychosocial Survey - Bayesian Data Analysis using a Three-Component Mixture Model"
+date: "3/9/2017"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r threecomp,echo=FALSE}
+#Loading required libraries
+library(gtools)
+library(coda)
+
+#Initiating priors
+a<-b<-c<-1
+nu0<-20
+mu0<-mun1<-mun2<-mun3<-5.5 #5.5 is the overall mean of the data
+sigma20<-.1
+sigma2n1<-sigma2n2<-sigma2n3<-sigma20
+tau20<-1
+stress<-read.csv("data.csv")
+y<-data.frame(stress)
+colnames(y)<-c("id","x","school","sib")
+
+###initialize the chain
+len<-length(y$x)
+y$p<-runif(len)
+test<-rmultinom(len,size=1,prob=c(1,1,1))
+y$z<-test[1,]*0+test[2,]*1+test[3,]*2
+n<-c(sum(y$z==0),sum(y$z==1),sum(y$z==2))
+
+nsam<-10000
+PHI<-matrix(nrow=nsam,ncol=10)
+PHI[1,]<-phi<-c(mun1,mun2,mun3,sigma2n1,sigma2n2,sigma2n3,n[1],n[2],n[3],mu0)
+
+count1<-count2<-count3<-0
+
+for(i in 2:nsam){
+   n<-c(sum(y$z==0),sum(y$z==1),sum(y$z==2))
+
+   ## calculate sample means and taus based on z assignments
+  mean1<-ifelse(n[1]<1,mu0,mean(y$x[y$z==0]))
+  mean2<-ifelse(n[2]<1,mu0,mean(y$x[y$z==1]))
+  mean3<-ifelse(n[3]<1,mu0,mean(y$x[y$z==2]))
+  
+  
+  s21<-ifelse(n[1]<2,sigma20,var(y$x[y$z==0]))
+  s22<-ifelse(n[2]<2,sigma20,var(y$x[y$z==1]))
+  s23<-ifelse(n[3]<2,sigma20,var(y$x[y$z==2]))
+  
+  mun1<-(mu0/tau20+n[1]*mean1/phi[4])/(1/tau20+n[1]/phi[4])
+  mun2<-(mu0/tau20+n[2]*mean2/phi[5])/(1/tau20+n[2]/phi[5])
+  mun3<-(mu0/tau20+n[3]*mean3/phi[6])/(1/tau20+n[3]/phi[6])
+  tau21<-1/(1/tau20+n[1]/phi[4])
+  tau22<-1/(1/tau20+n[2]/phi[5])
+  tau23<-1/(1/tau20+n[3]/phi[6])
+
+  ##sample means from each full conditional
+  def<-c(rnorm(1,mun1,sqrt(tau21)),rnorm(1,mun2,sqrt(tau22)),rnorm(1,mun3,sqrt(tau23)))
+  ##make sure the menas don't swap
+  phi[1:3]<-c(min(def),median(def),max(def))
+  
+  ##generate a new set of sigma 2 from full conditional
+  nu1n<-nu0+n[1]
+  nu2n<-nu0+n[2]
+  nu3n<-nu0+n[3]
+  
+  sigma2n1<-(nu0*sigma20+(n[1]-1)*s21+n[1]*(mean1-phi[1])^2)/nu1n
+  sigma2n2<-(nu0*sigma20+(n[2]-1)*s22+n[2]*(mean2-phi[2])^2)/nu2n
+  sigma2n3<-(nu0*sigma20+(n[3]-1)*s23+n[3]*(mean3-phi[3])^2)/nu3n
+  
+  phi[4:6]<-c(1/rgamma(1,nu1n/2,nu1n*sigma2n1/2),1/rgamma(1,nu2n/2,nu2n*sigma2n2/2),1/rgamma(1,nu3n/2,nu3n*sigma2n3/2))
+  phi[7:9]<-c(n[1],n[2],n[3])
+  
+  ##sample from posterior predictive distribution (could rework this to be a multinom and more elegant, but this seems to work)
+  test<-runif(1)
+  phi[10]<-ifelse(test<(n[1]/len),rnorm(1,phi[1],sqrt(phi[4])),ifelse(test<((n[1]+n[2])/len),rnorm(1,phi[2],sqrt(phi[5])),rnorm(1,phi[3],sqrt(phi[6]))))
+  PHI[i,]<-phi
+  
+  ##assign each value a new Z based on relative likelihoods of belonging to each component
+  psample<-rdirichlet(len,c(phi[7:9]))
+
+  like1<-dnorm(y$x,phi[1],sqrt(phi[4]))
+  like2<-dnorm(y$x,phi[2],sqrt(phi[5]))
+  like3<-dnorm(y$x,phi[3],sqrt(phi[6]))
+  
+  y$p1<-psample[,1]*like1/(psample[,1]*like1+psample[,2]*like2+psample[,3]*like3)
+  y$p2<-psample[,2]*like2/(psample[,1]*like1+psample[,2]*like2+psample[,3]*like3)
+  y$p3<-psample[,3]*like3/(psample[,1]*like1+psample[,2]*like2+psample[,3]*like3)
+  
+  ##inefficient but works to sample from multinom
+  test<-matrix(NA, nrow = len, ncol = 3)
+  for(j in 1:len){
+  test[j,]<-rmultinom(1,size=1,prob=c(y$p1[j],y$p2[j],y$p3[j]))
+  }
+  y$z<-test[,1]*0+test[,2]*1+test[,3]*2
+  
+  ##catch to make sure that there is at least one value associated with each level
+  catch<-sample(1:len,3,replace=FALSE)
+  if(sum(y$z==0)==0){y$z[catch[1]]<-0
+  count1=count1+1}
+  if(sum(y$z==1)==0){y$z[catch[2]]<-1
+  count2=count2+1}
+  if(sum(y$z==2)==0){y$z[catch[3]]<-2
+  count3=count3+1}
+} 
+
+##thinning 
+ids<-seq(1,nsam,by=10)
+phislimmed<-PHI[ids,1:10]
+
+plot(ids,phislimmed[,1],type="l",ylim=c(0,10),xlab="Iteration",ylab="theta",main="Means of three component model")
+points(ids,phislimmed[,2],col="red",type="l")
+points(ids,phislimmed[,3],col="blue",type="l")
+legend(8000,3.4,c(expression(theta[1]),expression(theta[2]),expression(theta[3])),lty=c(1,1,1),lwd=c(2.5,2.5,2.5),col=c("black","red","blue"))
+
+#Mean value for each group and effective sample sizes
+mean(phislimmed[,1])
+mean(phislimmed[,2])
+mean(phislimmed[,3])
+round(effectiveSize(PHI[,1]))
+round(effectiveSize(PHI[,2]))
+round(effectiveSize(PHI[,3]))
+
+#Effective sample size plot
+plot(ids,phislimmed[,7],type="l",ylim=c(-10,100),xlab="Iteration",ylab="Effective sample sizes",col="green",main="Effective sample sizes")
+points(ids,phislimmed[,8],col="orange",type="l")
+points(ids,phislimmed[,9],col="pink",type="l")
+
+count1
+count2
+count3
+
+#Final plot of model vs. data
+plot(density(y$x),xlab="LOWIP",main="Distribution of LOWIP Values",ylim=c(0,1),lwd=3)
+lines(density(phislimmed[,10]),type="l",col="red",lwd=3)
+legend(3.5,.9,c("Observed Data","Posterior Predictive") ,lty=c(1,1), lwd=c(2.5,2.5), col=c("black","red"))
+```
+
+
+
+```{r exploratory, echo=FALSE}
+mean(y$x[y$school==0])
+mean(y$x[y$school==1])
+mean(y$x[y$school==2])
+
+mean(y$x[y$sib==0])
+mean(y$x[y$sib==1])
+mean(y$x[y$sib==2])
+
+```
